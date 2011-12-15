@@ -23,19 +23,19 @@
 --   > data Rec1 = Rec1 {rcField1 :: String, rcField2 :: Int} deriving (Show)
 --   > $(deriveModM ''Rec1)
 --   >
---   > defaultOptions = ((Rec1 "" 0), ())
+--   > defaultOptions = ((Rec1 "" 0), False)
 --   >
 --   > example = concat [
---   >  dummy =:: [ option [] ["help"] (NoA) "Help msg" (\_ _ -> print "help msg") ],
+--   >  dummy =:: [ option [] ["action"] (NoA) "Do some action" (\_ _ -> putStrLn "IO Action") ],
 --   >  firstM =:: [
 --   >    modM_rcField1 =: option ['a'] ["append"] (ReqA "X") "Append" (\s f -> return (f ++ (fromMaybe "" s))),
 --   >    modM_rcField2 =: option ['r'] ["read"] (ReqA "Y") "Read" (\s f -> return (read $ fromMaybe "" s))
 --   >    ],
---   >  secondM =:: [ option ['n'] ["no-arg"] (NoA) "Some action" (\_ _ -> print "action!") ]
+--   >  secondM =:: [ option ['n'] ["no-arg"] (NoA) "Set flag" (\_ _ -> return True) ]
 --   >  ]
 --   >
 --   > main = do
---   >   (opts,args) <- parseOptions example defaultOptions "" =<< getArgs
+--   >   (opts,args) <- parseOptions example defaultOptions defaultParsingConf =<< getArgs
 --   >   print opts
 --   >   print args
 --   >
@@ -58,6 +58,7 @@ module System.Console.YAOP
        , pcUsageHeader
        , pcHelpFlag
        , pcHelpExtraInfo
+       , pcPermuteArgs
        , parseOptions
        )
     where
@@ -125,7 +126,7 @@ secondM f (x,y) = f y >>= \y' -> return (x, y')
   where
     fmapM f (Opt s l r h x) = Opt s l r h (\arg a -> f (x arg) a)
 
--- | Combines a selector and a list of options, that could also be selected with @(=::)@ or @(=:)@.
+-- | Combines a selector and a list of options, producing a list of options, that could be combined with an additional selector.
 (=::) :: ((t -> IO t) -> a -> IO a) -> [Opt t] -> [Opt a]
 (=::) f ops = map (\op -> f =: op) ops
 
@@ -136,16 +137,18 @@ genOptDescr = let arg (NoA) f = NoArg (f Nothing)
                   convert (Opt s l r h f) = Option s l (arg r f) h
               in map convert
 
-data ParsingConf = ParsingConf { pcUsageHeader   :: String -- ^ Usage message header
-                               , pcHelpFlag      :: Maybe String -- ^ Name of help message flag, default: @\"help\"@
-                               , pcHelpExtraInfo :: String -- ^ Extra help information
+data ParsingConf = ParsingConf { pcUsageHeader   :: String        -- ^ Usage message header
+                               , pcHelpFlag      :: Maybe String  -- ^ Name of help message flag, default: @\"help\"@
+                               , pcHelpExtraInfo :: String        -- ^ Extra help information
+                               , pcPermuteArgs   :: Bool          -- ^ @True@ means `System.Console.GetOpt`'s @Permute@, @False@ means @RequireOrder@
                                }
 
 -- | Default option parsing configuration
 defaultParsingConf :: ParsingConf
-defaultParsingConf = ParsingConf { pcUsageHeader = "USAGE: ... [FLAGS]"
-                                 , pcHelpFlag = Just "help"
+defaultParsingConf = ParsingConf { pcUsageHeader   = "USAGE: ... [FLAGS]"
+                                 , pcHelpFlag      = Just "help"
                                  , pcHelpExtraInfo = ""
+                                 , pcPermuteArgs   = True
                                  }
 
 -- | Run parser, return configured options environment and arguments
@@ -164,7 +167,10 @@ parseOptions options defaultOptions conf rawArgs = do
                     Just flag -> [ Option [] [flag] (NoArg showHelp) "Print help message and exit." ]
                     Nothing -> []
       optdescr = helpdescr ++ genOptDescr options
-  let (actions, args, msgs) = getOpt Permute optdescr rawArgs
+      argorder = case pcPermuteArgs conf of
+                  True -> Permute
+                  False -> RequireOrder
+  let (actions, args, msgs) = getOpt argorder optdescr rawArgs
   mapM_ (error . (flip (++)) helpStr) msgs
   opts <- foldl' (>>=) (return defaultOptions) actions
   return (opts, args)
