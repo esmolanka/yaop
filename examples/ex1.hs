@@ -8,7 +8,7 @@ import Data.List
 import Data.Maybe
 
 -- | Options that are not mapped to data
-withoutData = [ dummy =: option [] ["help"] (NoA) "Help msg" (\_ _ -> print "help msg") ]
+withoutData = [ dummy =: option [] ["action"] (NoA) "Do some action" (\_ _ -> putStrLn "IO Action") ]
 
 -- | Options data structure. Should use record syntax, may have more than one constructor
 data Options = Options { optFileName :: FilePath
@@ -33,6 +33,6 @@ optDesc = [
 bothDesc = withoutData ++ optDesc
 
 main = do
-  (opts,args) <- parseOptions bothDesc defOptions "USAGE: ./ex1 [OPTIONS]" =<< getArgs
+  (opts,args) <- parseOptions bothDesc defOptions ( defaultParsingConf { pcUsageHeader = "USAGE: ./ex1 [OPTIONS]" } ) =<< getArgs
   print opts
   print args

@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, ImpredicativeTypes, NoMonomorphismRestriction #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 ------------------------------------------------------------------------
 -- |
@@ -54,10 +54,15 @@ module System.Console.YAOP
        , firstM
        , secondM
          -- * Runner
+       , defaultParsingConf
+       , pcUsageHeader
+       , pcHelpFlag
+       , pcHelpExtraInfo
        , parseOptions
        )
     where
 
+import System
 import System.Console.GetOpt
 import Data.List
 
@@ -131,16 +136,36 @@ genOptDescr = let arg (NoA) f = NoArg (f Nothing)
                   convert (Opt s l r h f) = Option s l (arg r f) h
               in map convert
 
+data ParsingConf = ParsingConf { pcUsageHeader   :: String -- ^ Usage message header
+                               , pcHelpFlag      :: Maybe String -- ^ Name of help message flag, default: @\"help\"@
+                               , pcHelpExtraInfo :: String -- ^ Extra help information
+                               }
+
+-- | Default option parsing configuration
+defaultParsingConf :: ParsingConf
+defaultParsingConf = ParsingConf { pcUsageHeader = "USAGE: ... [FLAGS]"
+                                 , pcHelpFlag = Just "help"
+                                 , pcHelpExtraInfo = ""
+                                 }
+
 -- | Run parser, return configured options environment and arguments
 parseOptions :: [Opt t]      -- ^ options for datatype @t@
              -> t            -- ^ initial environment
-             -> String       -- ^ usage header
+             -> ParsingConf  -- ^ parsing configuration
              -> [String]     -- ^ raw arguments
              -> IO (t, [String])
-parseOptions options defaultOptions usageHeader rawArgs = do
-  let optdescr = genOptDescr options
+parseOptions options defaultOptions conf rawArgs = do
+  let helpStr = usageInfo (unlines [pcUsageHeader conf,pcHelpExtraInfo conf]) optdescr
+      showHelp opts = do
+        putStrLn helpStr
+        exitWith ExitSuccess
+        return opts
+      helpdescr = case pcHelpFlag conf of
+                    Just flag -> [ Option [] [flag] (NoArg showHelp) "Print help message and exit." ]
+                    Nothing -> []
+      optdescr = helpdescr ++ genOptDescr options
   let (actions, args, msgs) = getOpt Permute optdescr rawArgs
-  mapM_ (error . (flip (++)) (usageInfo usageHeader optdescr) ) msgs
+  mapM_ (error . (flip (++)) helpStr) msgs
   opts <- foldl' (>>=) (return defaultOptions) actions
   return (opts, args)
 

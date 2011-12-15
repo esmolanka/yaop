@@ -7,8 +7,10 @@ import System.Console.YAOP
 import Data.List
 import Data.Maybe
 
+usageStr = "USAGE: ./ex2 [OPTIONS]"
+
 -- | Options that are not mapped to data
-withoutData = [ dummy =: option [] ["help"] (NoA) "Help msg" (\_ _ -> print "help msg") ]
+withoutData = [ dummy =: option [] ["usage"] (NoA) "Print usage string" (\_ _ -> putStrLn usageStr >> exitWith ExitSuccess) ]
 
 -- | Options data structure. Should use record syntax, may have more than one constructor
 data Options = Options { optFileName :: FilePath
@@ -60,6 +62,6 @@ allDesc = withoutData ++ firstM =:: optDesc ++ secondM =:: otherDesc
 defAll = (defOptions, defOtherOpts)
 
 main = do
-  (opts,args) <- parseOptions allDesc defAll "USAGE: ./ex2 [OPTIONS]" =<< getArgs
+  (opts,args) <- parseOptions allDesc defAll (defaultParsingConf { pcUsageHeader = usageStr }) =<< getArgs
   print opts
   print args
