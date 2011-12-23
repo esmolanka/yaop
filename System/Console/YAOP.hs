@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleContexts, TemplateHaskell #-}
 
 ------------------------------------------------------------------------
 -- |
@@ -48,7 +48,6 @@ module System.Console.YAOP
        , option
          -- * Combine
        , (=:)
-       , (=::)
          -- * Selectors
        , dummy
        , firstM
@@ -65,6 +64,9 @@ module System.Console.YAOP
 
 import System
 import System.Console.GetOpt
+
+import Control.Monad.Writer
+
 import Data.List
 
 import Language.Haskell.TH
@@ -76,7 +78,7 @@ mkModM fname = do
   rec <- newName "rec"
   val <- newName "val"
   body <- [|let set = $(return $ LamE [VarP val] (RecUpdE (VarE rec) [(fname,VarE val)])) in $(return $ VarE fn) ($(return $ VarE fname) $(return $ VarE rec)) >>= return . set|]
-  return $ FunD modName [Clause [VarP fn,VarP rec] (NormalB (body)) []]
+  return $ FunD modName [Clause [VarP fn,VarP rec] (NormalB body) []]
 
 -- | Generate functions with @(a -> m a) -> rec -> rec@ type for all
 -- fields of the specified record.
@@ -97,7 +99,7 @@ data ArgReq = NoA | OptA String | ReqA String deriving (Show)
 data Opt a = Opt String [String] ArgReq String (Maybe String -> a -> IO a)
 
 instance Show (Opt a) where
-  show (Opt s l r h _) = "Opt " ++ intercalate " " [show s, show l, show r, show h] ++ " <fn>"
+  show (Opt s l r h _) = "Opt " ++ unwords [show s, show l, show r, show h] ++ " <fn>"
 
 -- | Smart option constructor
 option :: String     -- ^ short option, e.g.: @['a']@
@@ -105,8 +107,11 @@ option :: String     -- ^ short option, e.g.: @['a']@
        -> ArgReq     -- ^ specify if argument is required
        -> String     -- ^ help message
        -> (Maybe String -> a -> IO a) -- ^ a function that takes an argument and modifies selected field
-       -> Opt a
-option s l r h f = Opt s l r h f
+       -> OptM a ()
+option s l r h f = tell [ Opt s l r h f ]
+
+newtype OptM a r = OptM (Writer [Opt a] r) deriving (Monad, MonadWriter [Opt a])
+runOptM (OptM writer) = execWriter writer
 
 -- | Dummy selector, selects nothing. Useful for some @--help@ options.
 dummy :: Monad m => (() -> m a) -> b -> m b
@@ -120,20 +125,21 @@ firstM  f (x,y) = f x >>= \x' -> return (x', y)
 secondM :: Monad m => (t -> m t2) -> (t1, t) -> m (t1, t2)
 secondM f (x,y) = f y >>= \y' -> return (x, y')
 
--- | Combines a selector and a single option.
-(=:) :: ((t -> IO t) -> a -> IO a) -> Opt t -> Opt a
-(=:) f op = fmapM f op
+selects :: (MonadWriter [Opt t] (OptM t)) => ((t -> IO t) -> a -> IO a) -> OptM t () -> OptM a ()
+selects f optm = do
+  let os  = runOptM optm
+      os' = map (fmapM f) os
+  tell os'
   where
     fmapM f (Opt s l r h x) = Opt s l r h (\arg a -> f (x arg) a)
 
--- | Combines a selector and a list of options, producing a list of options, that could be combined with an additional selector.
-(=::) :: ((t -> IO t) -> a -> IO a) -> [Opt t] -> [Opt a]
-(=::) f ops = map (\op -> f =: op) ops
+-- | Apply a selector to options
+(=:) = selects
 
 genOptDescr :: [Opt a] -> [OptDescr (a -> IO a)]
 genOptDescr = let arg (NoA) f = NoArg (f Nothing)
                   arg (OptA h) f = OptArg f h
-                  arg (ReqA h) f = ReqArg (\s -> f (Just s)) h
+                  arg (ReqA h) f = ReqArg (f . Just) h
                   convert (Opt s l r h f) = Option s l (arg r f) h
               in map convert
 
@@ -152,7 +158,7 @@ defaultParsingConf = ParsingConf { pcUsageHeader   = "USAGE: ... [FLAGS]"
                                  }
 
 -- | Run parser, return configured options environment and arguments
-parseOptions :: [Opt t]      -- ^ options for datatype @t@
+parseOptions :: OptM t ()    -- ^ options for datatype @t@
              -> t            -- ^ initial environment
              -> ParsingConf  -- ^ parsing configuration
              -> [String]     -- ^ raw arguments
@@ -166,12 +172,12 @@ parseOptions options defaultOptions conf rawArgs = do
       helpdescr = case pcHelpFlag conf of
                     Just flag -> [ Option [] [flag] (NoArg showHelp) "Print help message and exit." ]
                     Nothing -> []
-      optdescr = helpdescr ++ genOptDescr options
+      optdescr = helpdescr ++ genOptDescr (runOptM options)
       argorder = case pcPermuteArgs conf of
                   True -> Permute
                   False -> RequireOrder
   let (actions, args, msgs) = getOpt argorder optdescr rawArgs
-  mapM_ (error . (flip (++)) helpStr) msgs
+  mapM_ (error . flip (++) helpStr) msgs
   opts <- foldl' (>>=) (return defaultOptions) actions
   return (opts, args)
 
