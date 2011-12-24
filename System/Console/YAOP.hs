@@ -45,6 +45,7 @@ module System.Console.YAOP
          deriveModM
          -- * Construtors
        , ArgReq (..)
+       , OptM
        , option
          -- * Combine
        , (=:)
