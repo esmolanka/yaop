@@ -12,39 +12,56 @@
 -- YAOP is a library for options parsings that uses base
 -- 'System.Console.GetOpt' as a backend.
 --
---   > {-# LANGUAGE TemplateHaskell #-}
---   >
---   > import System
---   > import System.Console.YAOP -- that parsing module
---   >
---   > import Data.List
---   > import Data.Maybe
---   >
---   > data Rec1 = Rec1 {rcField1 :: String, rcField2 :: Int} deriving (Show)
---   > $(deriveModM ''Rec1)
---   >
---   > defaultOptions = ((Rec1 "" 0), False)
---   >
---   > example = concat [
---   >  dummy =:: [ option [] ["action"] (NoA) "Do some action" (\_ _ -> putStrLn "IO Action") ],
---   >  firstM =:: [
---   >    modM_rcField1 =: option ['a'] ["append"] (ReqA "X") "Append" (\s f -> return (f ++ (fromMaybe "" s))),
---   >    modM_rcField2 =: option ['r'] ["read"] (ReqA "Y") "Read" (\s f -> return (read $ fromMaybe "" s))
---   >    ],
---   >  secondM =:: [ option ['n'] ["no-arg"] (NoA) "Set flag" (\_ _ -> return True) ]
---   >  ]
---   >
---   > main = do
---   >   (opts,args) <- parseOptions example defaultOptions defaultParsingConf =<< getArgs
---   >   print opts
---   >   print args
---   >
+-- > {-# LANGUAGE TemplateHaskell #-}
+-- >
+-- > import System
+-- > import System.Environment
+-- > import System.Console.YAOP
+-- >
+-- > import Data.List
+-- > import Data.Maybe
+-- >
+-- > -- | Options that are not mapped to data
+-- > withoutData = dummy =: option [] ["action"] NoA "Do some action" (\_ _ -> putStrLn "IO Action")
+-- >
+-- > -- | Options data structure. Should use record syntax, may have more than one constructor
+-- > data Options = Options { optFileName :: FilePath
+-- >                        , optCount :: Int
+-- >                        , optStuff :: [Either Int String]
+-- >                        } deriving (Show)
+-- >
+-- > -- | Default options
+-- > defOptions = Options {optFileName = "default.txt", optCount = 0, optStuff = []}
+-- >
+-- > -- | This triggers YAOP's accessors generator, e.g.
+-- > -- @modM_optFileName :: Monad m => (FilePath -> m FilePath) -> Options -> m Options@
+-- > $(deriveModM ''Options)
+-- >
+-- > -- | Here we define a list of options that are mapped to Options
+-- > optDesc = do
+-- >   modM_optFileName =: option ['f'] ["filename"] (ReqA "FN")
+-- >                       "Set some filename"
+-- >                       (\arg x -> print arg >> return (fromMaybe "" arg))
+-- >   modM_optCount    =: option ['c'] ["count"] (OptA "N")
+-- >                       "Set some count"
+-- >                       (\arg x -> return $ fromMaybe 100 (read `fmap` arg))
+-- >   modM_optStuff    =: option ['s'] ["stuff"] NoA
+-- >                       "Push \"foo\" to a list"
+-- >                        (\arg x -> return (Right "foo" : x))
+-- >
+-- > bothDesc = withoutData >> optDesc
+-- >
+-- > main = do
+-- >   (opts,args) <- parseOptions bothDesc defOptions defaultParsingConf =<< getArgs
+-- >   print opts
+-- >   print args
 
 module System.Console.YAOP
        ( -- * TH selectors generator
          deriveModM
          -- * Construtors
        , ArgReq (..)
+       , Opt
        , OptM
        , option
          -- * Combine
@@ -54,11 +71,8 @@ module System.Console.YAOP
        , firstM
        , secondM
          -- * Runner
+       , ParsingConf (..)
        , defaultParsingConf
-       , pcUsageHeader
-       , pcHelpFlag
-       , pcHelpExtraInfo
-       , pcPermuteArgs
        , parseOptions
        )
     where
@@ -126,16 +140,17 @@ firstM  f (x,y) = f x >>= \x' -> return (x', y)
 secondM :: Monad m => (t -> m t2) -> (t1, t) -> m (t1, t2)
 secondM f (x,y) = f y >>= \y' -> return (x, y')
 
-selects :: (MonadWriter [Opt t] (OptM t)) => ((t -> IO t) -> a -> IO a) -> OptM t () -> OptM a ()
-selects f optm = do
+-- | Apply selector to options combinator
+(=:) :: (MonadWriter [Opt t] (OptM t)) =>
+        ((t -> IO t) -> a -> IO a) -- ^ selector
+     -> OptM t ()                  -- ^ options
+     -> OptM a ()
+(=:) f optm = do
   let os  = runOptM optm
       os' = map (fmapM f) os
   tell os'
   where
     fmapM f (Opt s l r h x) = Opt s l r h (\arg a -> f (x arg) a)
-
--- | Apply a selector to options
-(=:) = selects
 
 genOptDescr :: [Opt a] -> [OptDescr (a -> IO a)]
 genOptDescr = let arg (NoA) f = NoArg (f Nothing)
