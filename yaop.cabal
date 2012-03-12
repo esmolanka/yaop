@@ -1,5 +1,5 @@
 Name:                yaop
-Version:             0.1.1.1
+Version:             0.1.2
 Synopsis:            Yet another option parser
 Description:
   A simple wrapper over the standard System.Console.GetOpt to make options
@@ -21,8 +21,7 @@ Source-repository head
     location: https://patch-tag.com/repo/zhacka/yaop
 
 Library
-  Exposed-modules:     System.Console.YAOP
+  Exposed-modules:     System.Console.YAOP, System.Console.YAOP.Actions
   Build-depends:       base>=4.2 && <5
                      , template-haskell
-                     , haskell98
                      , mtl>=2.0 && <2.1

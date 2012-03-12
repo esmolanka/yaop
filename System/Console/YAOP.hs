@@ -77,7 +77,7 @@ module System.Console.YAOP
        )
     where
 
-import System
+import System.Exit
 import System.Console.GetOpt
 
 import Control.Monad.Writer
@@ -180,20 +180,24 @@ parseOptions :: OptM t ()    -- ^ options for datatype @t@
              -> [String]     -- ^ raw arguments
              -> IO (t, [String])
 parseOptions options defaultOptions conf rawArgs = do
-  let helpStr = usageInfo (unlines [pcUsageHeader conf,pcHelpExtraInfo conf]) optdescr
+  let helpStr = init $ unlines [ pcUsageHeader conf
+                               , ""
+                               , pcHelpExtraInfo conf
+                               ]
+      usageStr = usageInfo helpStr optdescr
       showHelp opts = do
-        putStrLn helpStr
+        putStrLn $ usageStr
         exitWith ExitSuccess
         return opts
       helpdescr = case pcHelpFlag conf of
-                    Just flag -> [ Option [] [flag] (NoArg showHelp) "Print help message and exit." ]
+                    Just flag -> [ Option [] [flag] (NoArg showHelp) "print the help message and exit." ]
                     Nothing -> []
       optdescr = helpdescr ++ genOptDescr (runOptM options)
       argorder = case pcPermuteArgs conf of
                   True -> Permute
                   False -> RequireOrder
   let (actions, args, msgs) = getOpt argorder optdescr rawArgs
-  mapM_ (error . flip (++) helpStr) msgs
+  mapM_ (error . flip (++) usageStr) msgs
   opts <- foldl' (>>=) (return defaultOptions) actions
   return (opts, args)
 
