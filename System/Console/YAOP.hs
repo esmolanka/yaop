@@ -1,169 +1,110 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleContexts, TemplateHaskell #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleContexts, FlexibleInstances #-}
 
-------------------------------------------------------------------------
--- |
--- Module      :  System.Console.YAOP
--- Copyright   :  2011 Eugene Smoalnka
--- License     :  BSD-style
--- Maintainer  :  smolanka.zhacka@gmail.com
--- Stability   :  experimental
--- Portability :  portable
---
--- YAOP is a library for options parsings that uses base
--- 'System.Console.GetOpt' as a backend.
---
--- > {-# LANGUAGE TemplateHaskell #-}
--- >
--- > import System
--- > import System.Environment
--- > import System.Console.YAOP
--- >
--- > import Data.List
--- > import Data.Maybe
--- >
--- > -- | Options that are not mapped to data
--- > withoutData = dummy =: option [] ["action"] NoA "Do some action" (\_ _ -> putStrLn "IO Action")
--- >
--- > -- | Options data structure. Should use record syntax, may have more than one constructor
--- > data Options = Options { optFileName :: FilePath
--- >                        , optCount :: Int
--- >                        , optStuff :: [Either Int String]
--- >                        } deriving (Show)
--- >
--- > -- | Default options
--- > defOptions = Options {optFileName = "default.txt", optCount = 0, optStuff = []}
--- >
--- > -- | This triggers YAOP's accessors generator, e.g.
--- > -- @modM_optFileName :: Monad m => (FilePath -> m FilePath) -> Options -> m Options@
--- > $(deriveModM ''Options)
--- >
--- > -- | Here we define a list of options that are mapped to Options
--- > optDesc = do
--- >   modM_optFileName =: option ['f'] ["filename"] (ReqA "FN")
--- >                       "Set some filename"
--- >                       (\arg x -> print arg >> return (fromMaybe "" arg))
--- >   modM_optCount    =: option ['c'] ["count"] (OptA "N")
--- >                       "Set some count"
--- >                       (\arg x -> return $ fromMaybe 100 (read `fmap` arg))
--- >   modM_optStuff    =: option ['s'] ["stuff"] NoA
--- >                       "Push \"foo\" to a list"
--- >                        (\arg x -> return (Right "foo" : x))
--- >
--- > bothDesc = withoutData >> optDesc
--- >
--- > main = do
--- >   (opts,args) <- parseOptions bothDesc defOptions defaultParsingConf =<< getArgs
--- >   print opts
--- >   print args
+-- Cyclop's your command line option parser
 
-module System.Console.YAOP
-       ( -- * TH selectors generator
-         deriveModM
-         -- * Construtors
-       , ArgReq (..)
-       , Opt
-       , OptM
-       , option
-         -- * Combine
-       , (=:)
-         -- * Selectors
-       , dummy
-       , firstM
-       , secondM
-         -- * Runner
-       , ParsingConf (..)
-       , defaultParsingConf
-       , parseOptions
-       )
-    where
+module System.Console.YAOP where
 
 import System.Exit
 import System.Console.GetOpt
 
+import System.Console.YAOP.Selector
+import System.Console.YAOP.Argument
+import System.Console.YAOP.TH
+import System.Console.YAOP.Types
+
+import Control.Arrow
+
 import Control.Monad.Writer
 
+import Data.Maybe
 import Data.List
-
-import Language.Haskell.TH
-
-mkModM :: Name -> Q Dec
-mkModM fname = do
-  let modName = mkName ("modM_" ++ nameBase fname)
-  fn <- newName "fn"
-  rec <- newName "rec"
-  val <- newName "val"
-  body <- [|let set = $(return $ LamE [VarP val] (RecUpdE (VarE rec) [(fname,VarE val)])) in $(return $ VarE fn) ($(return $ VarE fname) $(return $ VarE rec)) >>= return . set|]
-  return $ FunD modName [Clause [VarP fn,VarP rec] (NormalB body) []]
-
--- | Generate functions with @(a -> m a) -> rec -> rec@ type for all
--- fields of the specified record.
-deriveModM :: Name -> Q [Dec]
-deriveModM t = do
-  TyConI (DataD _ _ _ constructors _) <- reify t
-  let mkFieldsModM :: Con -> Q [Dec]
-      mkFieldsModM (RecC name fields) = do
-                 let fnames = map (\(name,_,_) -> name) fields
-                 mapM mkModM fnames
-      mkFieldsModM _ = error "Only records are supported"
-  decs <- mapM mkFieldsModM constructors
-  return (concat decs)
-
--- | Specifies if argument is required, optional or not necessary
-data ArgReq = NoA | OptA String | ReqA String deriving (Show)
-
-data Opt a = Opt String [String] ArgReq String (Maybe String -> a -> IO a)
-
-instance Show (Opt a) where
-  show (Opt s l r h _) = "Opt " ++ unwords [show s, show l, show r, show h] ++ " <fn>"
-
--- | Smart option constructor
-option :: String     -- ^ short option, e.g.: @['a']@
-       -> [String]   -- ^ long option, e.g.: @[\"add\"]@
-       -> ArgReq     -- ^ specify if argument is required
-       -> String     -- ^ help message
-       -> (Maybe String -> a -> IO a) -- ^ a function that takes an argument and modifies selected field
-       -> OptM a ()
-option s l r h f = tell [ Opt s l r h f ]
 
 newtype OptM a r = OptM (Writer [Opt a] r) deriving (Monad, MonadWriter [Opt a])
 runOptM (OptM writer) = execWriter writer
 
--- | Dummy selector, selects nothing. Useful for some @--help@ options.
-dummy :: Monad m => (() -> m a) -> b -> m b
-dummy f t = f () >> return t
-
--- | Monadic action over the first element, useful as selector.
-firstM :: Monad m => (t -> m t1) -> (t, t2) -> m (t1, t2)
-firstM  f (x,y) = f x >>= \x' -> return (x', y)
-
--- | Monadic action over the second element, useful as selector.
-secondM :: Monad m => (t -> m t2) -> (t1, t) -> m (t1, t2)
-secondM f (x,y) = f y >>= \y' -> return (x, y')
-
 -- | Apply selector to options combinator
 (=:) :: (MonadWriter [Opt t] (OptM t)) =>
-        ((t -> IO t) -> a -> IO a) -- ^ selector
-     -> OptM t ()                  -- ^ options
+        ((t -> IO t) -> a -> IO a)  -- ^ selector
+     -> OptM t ()                   -- ^ options
      -> OptM a ()
-(=:) f optm = do
-  let os  = runOptM optm
-      os' = map (fmapM f) os
-  tell os'
-  where
-    fmapM f (Opt s l r h x) = Opt s l r h (\arg a -> f (x arg) a)
+(=:) f optm = tell . map (fmap f) $ runOptM optm
 
-genOptDescr :: [Opt a] -> [OptDescr (a -> IO a)]
-genOptDescr = let arg (NoA) f = NoArg (f Nothing)
-                  arg (OptA h) f = OptArg f h
-                  arg (ReqA h) f = ReqArg (f . Just) h
-                  convert (Opt s l r h f) = Option s l (arg r f) h
-              in map convert
+instance Show (ArgDescr a) where
+    show (NoArg _) = "NoArg <f>"
+    show (ReqArg _ help) = "ReqArg <f> " ++ show help
+    show (OptArg _ help) = "OptArg <f> " ++ show help
 
-data ParsingConf = ParsingConf { pcUsageHeader   :: String        -- ^ Usage message header
-                               , pcHelpFlag      :: Maybe String  -- ^ Name of help message flag, default: @\"help\"@
-                               , pcHelpExtraInfo :: String        -- ^ Extra help information
-                               , pcPermuteArgs   :: Bool          -- ^ @True@ means `System.Console.GetOpt`'s @Permute@, @False@ means @RequireOrder@
-                               }
+option :: (Argument arg) =>
+         String
+      -> [String]
+      -> String
+      -> String
+      -> (arg -> a -> IO a)
+      -> OptM a ()
+option short long arg help setter =
+    tell [ Opt $ Option short long (argDescr setter arg) help ]
+
+argument :: (Argument a) =>
+            (a -> b -> IO b)
+         -> OptM b ()
+argument setter =
+    tell [ Arg $ argParse setter ]
+
+class Configurable a where
+    defOptions :: a
+    descOptions :: OptM a ()
+
+instance Configurable [String] where
+    defOptions = []
+    descOptions = tell [ Arg $ ArgParse Many (\str l -> return $ l ++ [str] ) ]
+
+instance (Configurable a, Configurable b) => Configurable (a, b) where
+    defOptions = (defOptions, defOptions)
+    descOptions = do
+      firstM =: descOptions
+      secondM =: descOptions
+
+instance (Configurable a, Configurable b, Configurable c) => Configurable (a, b, c) where
+    defOptions = (defOptions, defOptions, defOptions)
+    descOptions = do
+      (\f (x, y, z) -> f x >>= \q -> return (q, y, z)) =: descOptions
+      (\f (x, y, z) -> f y >>= \q -> return (x, q, z)) =: descOptions
+      (\f (x, y, z) -> f z >>= \q -> return (x, y, q)) =: descOptions
+
+instance (Configurable a, Configurable b, Configurable c, Configurable d) => Configurable (a, b, c, d) where
+    defOptions = (defOptions, defOptions, defOptions, defOptions)
+    descOptions = do
+      (\f (x, y, z, i) -> f x >>= \q -> return (q, y, z, i)) =: descOptions
+      (\f (x, y, z, i) -> f y >>= \q -> return (x, q, z, i)) =: descOptions
+      (\f (x, y, z, i) -> f z >>= \q -> return (x, y, q, i)) =: descOptions
+      (\f (x, y, z, i) -> f i >>= \q -> return (x, y, z, q)) =: descOptions
+
+
+parseArgs :: [String] -> [ArgParse (t -> IO t)] -> [(t -> IO t)]
+parseArgs args parsers =
+    let (reqBeginning, rest1)   = break (not . isRequired) parsers
+        (reqEnding, optionalPs) = second reverse . break (not . isRequired) $ reverse rest1
+
+    in undefined
+    where
+      isRequired (ArgParse OneReq _) = True
+      consumeReq (x:xs) ((ArgParse OneReq fn):ps) =
+          let (actions, rest) = consumeReq xs ps
+          in (fn x : actions, rest)
+      consumeReq [] (p:ps) = error "Required parameter is not specified"
+      consumeReq xs [] = ([], xs)
+
+
+data ParsingConf = ParsingConf
+    { pcUsageHeader   :: String
+      -- ^ Usage message header
+    , pcHelpFlag      :: Maybe String
+      -- ^ Name of help message flag, default: @\"help\"@
+    , pcHelpExtraInfo :: String
+      -- ^ Extra help information
+    , pcPermuteArgs   :: Bool
+      -- ^ @True@ means `System.Console.GetOpt`'s @Permute@, @False@ means @RequireOrder@
+    }
 
 -- | Default option parsing configuration
 defaultParsingConf :: ParsingConf
@@ -173,13 +114,17 @@ defaultParsingConf = ParsingConf { pcUsageHeader   = "USAGE: ... [FLAGS]"
                                  , pcPermuteArgs   = True
                                  }
 
--- | Run parser, return configured options environment and arguments
-parseOptions :: OptM t ()    -- ^ options for datatype @t@
-             -> t            -- ^ initial environment
-             -> ParsingConf  -- ^ parsing configuration
-             -> [String]     -- ^ raw arguments
+parseOptions :: (Configurable t) =>
+                [String]     -- ^ raw arguments
              -> IO (t, [String])
-parseOptions options defaultOptions conf rawArgs = do
+parseOptions = parseOptions' defaultParsingConf
+
+-- | Run parser, return configured options environment and arguments
+parseOptions' :: (Configurable t) =>
+                 ParsingConf  -- ^ parsing configuration
+              -> [String]     -- ^ raw arguments
+              -> IO t
+parseOptions' conf rawArgs = do
   let helpStr = init $ unlines [ pcUsageHeader conf
                                , ""
                                , pcHelpExtraInfo conf
@@ -192,12 +137,17 @@ parseOptions options defaultOptions conf rawArgs = do
       helpdescr = case pcHelpFlag conf of
                     Just flag -> [ Option [] [flag] (NoArg showHelp) "print the help message and exit." ]
                     Nothing -> []
-      optdescr = helpdescr ++ genOptDescr (runOptM options)
-      argorder = case pcPermuteArgs conf of
-                  True -> Permute
-                  False -> RequireOrder
-  let (actions, args, msgs) = getOpt argorder optdescr rawArgs
+      parsers = runOptM descOptions
+
+      optdescr = helpdescr ++ concatMap (\x -> case x of {Opt d -> [d]; _ -> []} ) parsers
+
+      argparsers = concatMap (\x -> case x of {(Arg p) -> [p]; _ -> []} ) parsers
+
+  let (actions, args, msgs) = getOpt Permute optdescr rawArgs
+      argActions = parseArgs args argparsers
+
   mapM_ (error . flip (++) usageStr) msgs
-  opts <- foldl' (>>=) (return defaultOptions) actions
-  return (opts, args)
+
+  opts <- foldl' (>>=) (return defOptions) (actions ++ argActions)
+  return opts
 

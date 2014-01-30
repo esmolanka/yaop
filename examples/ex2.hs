@@ -1,16 +1,17 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-import System
+import System.Exit
 import System.Environment
 import System.Console.YAOP
 
-import Data.List
+import Control.Monad
+
 import Data.Maybe
 
 usageStr = "USAGE: ./ex2 [OPTIONS]"
 
 -- | Options that are not mapped to data
-withoutData = dummy =: option [] ["usage"] NoA "Print usage string" (\_ _ -> putStrLn usageStr >> exitWith ExitSuccess)
+withoutData = dummy =: action [] ["usage"] "Print usage string" (\() -> putStrLn usageStr >> exitWith ExitSuccess)
 
 -- | Options data structure. Should use record syntax, may have more than one constructor
 data Options = Options { optFileName :: FilePath
@@ -27,15 +28,15 @@ $(deriveModM ''Options)
 
 -- | Here we define a list of options that are mapped to Options
 optDesc = do
-  modM_optFileName =: option ['f'] ["filename"] (ReqA "FN") "Set some filename" (\arg _ -> print arg >> return (fromMaybe "" arg))
-  modM_optCount    =: option ['c'] ["count"] (OptA "N") "Set some count" (\arg _ -> return $ fromMaybe 100 (read `fmap` arg))
-  modM_optStuff    =: option ['s'] ["stuff"] NoA "Push \"foo\" to a list" (\arg x -> return $ (Right "foo" : x))
+  modM_optFileName =: param  ['f'] ["filename"] "FN" "Set some filename" (\arg _ -> print arg >> return arg)
+  modM_optCount    =: param  ['c'] ["count"] "N" "Set some count" (\arg _ -> return $ fromMaybe 100 (read `fmap` arg))
+  modM_optStuff    =: action ['s'] ["stuff"] "Push \"foo\" to a list" (\x -> return $ (Right "foo" : x))
 
 -- | Some additional options
 data OtherOpts = OtherOpts { otherServer :: String
                            , otherPort :: Int
                            , otherUsername :: String
-                           , otherPassword :: String
+                           , otherPassword :: Maybe String
                            , otherVerbose :: Bool
                            } deriving (Show)
 
@@ -44,20 +45,25 @@ $(deriveModM ''OtherOpts)
 defOtherOpts = OtherOpts { otherServer = ""
                          , otherPort = 8080
                          , otherUsername = ""
-                         , otherPassword = ""
+                         , otherPassword = Nothing
                          , otherVerbose = False
                          }
 
 -- | Options description for "OtherOpts"
 otherDesc = do
-  modM_otherServer   =: option ['S'] ["server"]   (ReqA "HOST") "Set server host" (\(Just arg) _ -> return arg)
-  modM_otherPort     =: option ['P'] ["port"]     (ReqA "PORT") "Set server port" (\(Just arg) _ -> return $ read arg)
-  modM_otherUsername =: option [   ] ["username"] (ReqA "USER") "Set username" (\(Just arg) _ -> return arg)
-  modM_otherPassword =: option [   ] ["username"] (OptA "PASS") "Set password" (\arg _ -> return $ fromMaybe "" arg)
-  modM_otherVerbose  =: option ['v'] ["verbose"]  NoA           "Verbose mode" (\_ _ -> return True)
+  modM_otherServer   =: flag ['S'] ["server"]   "HOST" "Set server host"
+  modM_otherPort     =: flag ['P'] ["port"]     "PORT" "Set server port"
+  modM_otherUsername =: flag [   ] ["username"] "USER" "Set username"
+  modM_otherPassword =: param [   ] ["password"] "PASS" "Set password" (\mstr _ -> fmap Just (maybe getLine return mstr))
+  modM_otherVerbose  =: flag ['v'] ["verbose"]  "BOOL" "Verbose mode"
+  modM_otherVerbose  =: tweak ['q'] ["no-verbose"]  "asdfasdfasdf" "Verbose mode" (\() -> const False)
+
 
 -- | Easily joined "Options" with "OtherOpts".
-allDesc = withoutData >> firstM =: optDesc >> secondM =: otherDesc
+allDesc = withoutData >>
+          firstM =: optDesc >>
+          secondM =: otherDesc
+
 defAll = (defOptions, defOtherOpts)
 
 main = do
