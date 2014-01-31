@@ -1,6 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleContexts, FlexibleInstances #-}
-
--- Cyclop's your command line option parser
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, DefaultSignatures #-}
 
 module System.Console.YAOP where
 
@@ -16,11 +14,9 @@ import Control.Arrow
 
 import Control.Monad.Writer
 
+import Data.Default
 import Data.Maybe
 import Data.List
-
-newtype OptM a r = OptM (Writer [Opt a] r) deriving (Monad, MonadWriter [Opt a])
-runOptM (OptM writer) = execWriter writer
 
 -- | Apply selector to options combinator
 (=:) :: (MonadWriter [Opt t] (OptM t)) =>
@@ -28,11 +24,6 @@ runOptM (OptM writer) = execWriter writer
      -> OptM t ()                   -- ^ options
      -> OptM a ()
 (=:) f optm = tell . map (fmap f) $ runOptM optm
-
-instance Show (ArgDescr a) where
-    show (NoArg _) = "NoArg <f>"
-    show (ReqArg _ help) = "ReqArg <f> " ++ show help
-    show (OptArg _ help) = "OptArg <f> " ++ show help
 
 option :: (Argument arg) =>
          String
@@ -52,6 +43,8 @@ argument setter =
 
 class Configurable a where
     defOptions :: a
+    default defOptions :: (Default a) => a
+    defOptions = def
     descOptions :: OptM a ()
 
 instance Configurable [String] where

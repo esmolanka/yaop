@@ -1,6 +1,9 @@
-{-# LANGUAGE FlexibleInstances, UndecidableInstances #-}
+{-# LANGUAGE OverlappingInstances, FlexibleContexts
+  , FlexibleInstances #-}
 
-module System.Console.YAOP.Argument where
+module System.Console.YAOP.Argument
+    ( Argument (..)
+    ) where
 
 import System.Console.GetOpt
 
@@ -51,22 +54,20 @@ instance Argument () where
     parseArg = const (Right ())
     argDescr f _ = NoArg (f ())
 
-{-
 instance (Argument a) => Argument [a] where
     parseArg str = mapM parseArg $ splitOn "," str
--}
 
 instance (Argument a, Argument b) => Argument (a, b) where
     parseArg str = case splitOn "," str of
                      [a, b] -> (,) <$> parseArg a <*> parseArg b
-                     _ -> Left $ "Wrong number of elements in " ++ show str
+                     _ -> Left $ "Expected pair instead of " ++ show str
 
 instance (Argument a, Argument b, Argument c) => Argument (a, b, c) where
     parseArg str = case splitOn "," str of
                      [a, b, c] -> (,,) <$> parseArg a <*> parseArg b <*> parseArg c
-                     _ -> Left $ "Wrong number of elements in " ++ show str
+                     _ -> Left $ "Expected triple instead of " ++ show str
 
 instance (Argument a, Argument b, Argument c, Argument d) => Argument (a, b, c, d) where
     parseArg str = case splitOn "," str of
                      [a, b, c, d] -> (,,,) <$> parseArg a <*> parseArg b <*> parseArg c <*> parseArg d
-                     _ -> Left $ "Wrong number of elements in " ++ show str
+                     _ -> Left $ "Expected 4-field tuple instead of " ++ show str

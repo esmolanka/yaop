@@ -1,12 +1,13 @@
 {-# LANGUAGE ExistentialQuantification #-}
-
-module System.Console.YAOP.Actions
+module System.Console.YAOP.Actions where
+{-
     ( Application (..)
     , Action (..)
     , runApplication
     ) where
 
 import System.Console.YAOP
+import System.Console.YAOP.Types
 
 data Application g
     = Application { appName :: String
@@ -67,3 +68,4 @@ runApplication (Application name actions desc defs help) rawArgs = do
           Nothing -> error $ "Unknown action '" ++ aname ++ "'. See "++name++" --help"
           Just action -> runAction name global action aextra
 
+-}
