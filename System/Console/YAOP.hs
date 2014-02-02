@@ -35,6 +35,19 @@ option :: (Argument arg) =>
 option short long arg help setter =
     tell [ Opt $ Option short long (argDescr setter arg) help ]
 
+set :: (Argument a) =>
+       String -> [String] -> String -> String -> OptM a ()
+set short long arg help =
+    let setter a _ = return $ a
+    in option short long arg help setter
+
+append :: (Monoid a, Argument arg, Singleton arg a) =>
+          String -> [String] -> String -> String -> OptM a ()
+append short long arg help =
+    let setter :: (Monoid a, Singleton arg a) => arg -> a -> IO a
+        setter a acc = return $ acc <> singleton a
+    in option short long arg help setter
+
 argument :: (Argument a) =>
             (a -> b -> IO b)
          -> OptM b ()
@@ -141,6 +154,6 @@ parseOptions' conf rawArgs = do
 
   mapM_ (error . flip (++) usageStr) msgs
 
-  opts <- foldl' (>>=) (return defOptions) (actions ++ argActions)
+  opts <- foldl' (>>=) (return defOptions) (actions) -- ++ argActions)
   return opts
 
