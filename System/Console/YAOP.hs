@@ -48,6 +48,17 @@ append short long arg help =
         setter a acc = return $ acc <> singleton a
     in option short long arg help setter
 
+appendMap :: (Monoid a, Argument arg) =>
+             String
+          -> [String] -> String
+          -> String -> (arg -> IO a)
+          -> OptM a ()
+appendMap short long arg help f =
+    let setter arg acc = do
+          val <- f arg
+          return $ val <> acc
+    in option short long arg help setter
+
 argument :: (Argument a) =>
             (a -> b -> IO b)
          -> OptM b ()
