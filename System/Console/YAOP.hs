@@ -1,7 +1,26 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, DefaultSignatures #-}
 
-module System.Console.YAOP where
+module System.Console.YAOP
+    ( module System.Console.YAOP.Selector
+    , module System.Console.YAOP.TH
+    , module System.Console.YAOP.Argument
+    , module System.Console.YAOP.Types
+    , (=:)
+    , option
+    , set
+    , append
+    , prepend
+    , appendMap
+    , Configurable (..)
+    , ParsingConf (..)
+    , defaultParsingConf
+    , parseOptions
+    , parseOptions'
+    )
+    where
 
+import System.Environment
+import System.IO.Unsafe
 import System.Exit
 import System.Console.GetOpt
 
@@ -132,7 +151,7 @@ data ParsingConf = ParsingConf
 
 -- | Default option parsing configuration
 defaultParsingConf :: ParsingConf
-defaultParsingConf = ParsingConf { pcUsageHeader   = "USAGE: ... [FLAGS]"
+defaultParsingConf = ParsingConf { pcUsageHeader   = "USAGE: " ++ unsafePerformIO getProgName ++ " [FLAGS]"
                                  , pcHelpFlag      = Just "help"
                                  , pcHelpExtraInfo = ""
                                  , pcPermuteArgs   = True

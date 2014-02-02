@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell, ScopedTypeVariables #-}
 
 import System.Exit
 import System.Environment
@@ -10,8 +10,10 @@ import Data.Maybe
 
 usageStr = "USAGE: ./ex2 [OPTIONS]"
 
--- | Options that are not mapped to data
-withoutData = dummy =: action [] ["usage"] "Print usage string" (\() -> putStrLn usageStr >> exitWith ExitSuccess)
+instance Configurable () where
+    defOptions = ()
+    descOptions = do
+        dummy =: option [] ["usage"] "" "Print usage string" (\() _ -> putStrLn usageStr >> exitWith ExitSuccess)
 
 -- | Options data structure. Should use record syntax, may have more than one constructor
 data Options = Options { optFileName :: FilePath
@@ -19,18 +21,20 @@ data Options = Options { optFileName :: FilePath
                        , optStuff :: [Either Int String]
                        } deriving (Show)
 
--- | Default options
-defOptions = Options {optFileName = "default.txt", optCount = 0, optStuff = []}
-
 -- | This triggers YAOP's accessors generator, e.g.
--- @modM_optFileName :: Monad m => (FilePath -> m FilePath) -> Options -> m Options@
-$(deriveModM ''Options)
+-- @_optFileName :: Monad m => (FilePath -> m FilePath) -> Options -> m Options@
+makeSetters ''Options
 
--- | Here we define a list of options that are mapped to Options
-optDesc = do
-  modM_optFileName =: param  ['f'] ["filename"] "FN" "Set some filename" (\arg _ -> print arg >> return arg)
-  modM_optCount    =: param  ['c'] ["count"] "N" "Set some count" (\arg _ -> return $ fromMaybe 100 (read `fmap` arg))
-  modM_optStuff    =: action ['s'] ["stuff"] "Push \"foo\" to a list" (\x -> return $ (Right "foo" : x))
+
+instance Configurable Options where
+    -- | Default options
+    defOptions = Options {optFileName = "default.txt", optCount = 0, optStuff = []}
+
+    -- | Here we define a list of options that are mapped to Options
+    descOptions = do
+      _optFileName =: option ['f'] ["filename"] "FN" "Set some filename" (\arg _ -> print arg >> return arg)
+      _optCount    =: option ['c'] ["count"] "N" "Set some count" (\arg _ -> return $ fromMaybe 100 (read `fmap` arg))
+      _optStuff    =: option ['s'] ["stuff"] "" "Push \"foo\" to a list" (\() x -> return $ (Right "foo" : x))
 
 -- | Some additional options
 data OtherOpts = OtherOpts { otherServer :: String
@@ -40,33 +44,24 @@ data OtherOpts = OtherOpts { otherServer :: String
                            , otherVerbose :: Bool
                            } deriving (Show)
 
-$(deriveModM ''OtherOpts)
+makeSetters ''OtherOpts
 
-defOtherOpts = OtherOpts { otherServer = ""
-                         , otherPort = 8080
-                         , otherUsername = ""
-                         , otherPassword = Nothing
-                         , otherVerbose = False
-                         }
-
--- | Options description for "OtherOpts"
-otherDesc = do
-  modM_otherServer   =: flag ['S'] ["server"]   "HOST" "Set server host"
-  modM_otherPort     =: flag ['P'] ["port"]     "PORT" "Set server port"
-  modM_otherUsername =: flag [   ] ["username"] "USER" "Set username"
-  modM_otherPassword =: param [   ] ["password"] "PASS" "Set password" (\mstr _ -> fmap Just (maybe getLine return mstr))
-  modM_otherVerbose  =: flag ['v'] ["verbose"]  "BOOL" "Verbose mode"
-  modM_otherVerbose  =: tweak ['q'] ["no-verbose"]  "asdfasdfasdf" "Verbose mode" (\() -> const False)
-
-
--- | Easily joined "Options" with "OtherOpts".
-allDesc = withoutData >>
-          firstM =: optDesc >>
-          secondM =: otherDesc
-
-defAll = (defOptions, defOtherOpts)
+instance Configurable OtherOpts where
+    defOptions = OtherOpts { otherServer = ""
+                           , otherPort = 8080
+                           , otherUsername = ""
+                           , otherPassword = Nothing
+                           , otherVerbose = False
+                           }
+    descOptions = do
+      _otherServer   =: set ['S'] ["server"]   "HOST" "Set server host"
+      _otherPort     =: set ['P'] ["port"]     "PORT" "Set server port"
+      _otherUsername =: set [   ] ["username"] "USER" "Set username"
+      _otherPassword =: option [   ] ["password"] "PASS" "Set password" (\mstr _ -> fmap Just (maybe getLine return mstr))
+      _otherVerbose  =: set ['v'] ["verbose"]  "BOOL" "Verbose mode"
+      _otherVerbose  =: option ['q'] ["no-verbose"]  "asdfasdfasdf" "Verbose mode" (\() _ -> return False)
 
 main = do
-  (opts,args) <- parseOptions allDesc defAll (defaultParsingConf { pcUsageHeader = usageStr }) =<< getArgs
+  ((), opts::Options, otherOpts::OtherOpts) <- parseOptions' defaultParsingConf =<< getArgs
   print opts
-  print args
+  print otherOpts
