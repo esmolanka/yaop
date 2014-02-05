@@ -27,11 +27,11 @@ instance Configurable Options where
                          , optThings = First Nothing
                          }
     descOptions = do
-      _optFoo    =: append ['F'] ["foo"] "MVAR" "Set foo"
-      _optDict   =: append ['a'] ["add"] "K=INT" "Add environment variable"
-      _optSources=: append ['S'] []      "PATH" "Include file"
-      _optBar    =: set ['B'] ["bar"] "MVAR" "Set bar"
-      _optThings =: appendMap ['i'] [] "FILEPATH" "Add include path" (\(path :: String) -> doesFileExist path >>=
+      _optFoo    =: append ['F'] ["foo"] Nothing "Set foo"
+      _optDict   =: append ['a'] ["add"] Nothing "Add environment variable"
+      _optSources=: append ['S'] []      Nothing "Include file"
+      _optBar    =: set ['B'] ["bar"] Nothing "Set bar"
+      _optThings =: appendMap ['i'] [] Nothing "Add include path" (\(path :: String) -> doesFileExist path >>=
                                                                       \x -> return $ if x then First (Just path) else First Nothing)
 
 test args = withArgs args main

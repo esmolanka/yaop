@@ -47,7 +47,7 @@ import Data.List
 option :: (Argument arg) =>
          String
       -> [String]
-      -> String
+      -> Maybe String
       -> String
       -> (arg -> a -> IO a)
       -> OptM a ()
@@ -55,20 +55,20 @@ option short long arg help setter =
     tell [ Opt $ Option short long (argDescr setter arg) help ]
 
 set :: (Argument a) =>
-       String -> [String] -> String -> String -> OptM a ()
+       String -> [String] -> Maybe String -> String -> OptM a ()
 set short long arg help =
     let setter a _ = return $ a
     in option short long arg help setter
 
 append :: (Monoid a, Argument arg, Singleton arg a) =>
-          String -> [String] -> String -> String -> OptM a ()
+          String -> [String] -> Maybe String -> String -> OptM a ()
 append short long arg help =
     let setter :: (Monoid a, Singleton arg a) => arg -> a -> IO a
         setter a acc = return $ acc <> singleton a
     in option short long arg help setter
 
 prepend :: (Monoid a, Argument arg, Singleton arg a) =>
-          String -> [String] -> String -> String -> OptM a ()
+          String -> [String] -> Maybe String-> String -> OptM a ()
 prepend short long arg help =
     let setter :: (Monoid a, Singleton arg a) => arg -> a -> IO a
         setter a acc = return $ singleton a <> acc
@@ -76,8 +76,10 @@ prepend short long arg help =
 
 appendMap :: (Monoid a, Argument arg) =>
              String
-          -> [String] -> String
-          -> String -> (arg -> IO a)
+          -> [String]
+          -> Maybe String
+          -> String
+          -> (arg -> IO a)
           -> OptM a ()
 appendMap short long arg help f =
     let setter arg acc = do
@@ -85,11 +87,13 @@ appendMap short long arg help f =
           return $ val <> acc
     in option short long arg help setter
 
+{-
 argument :: (Argument a) =>
             (a -> b -> IO b)
          -> OptM b ()
 argument setter =
     tell [ Arg $ argParse setter ]
+-}
 
 class Configurable a where
     defOptions :: a
@@ -122,7 +126,7 @@ instance (Configurable a, Configurable b, Configurable c, Configurable d) => Con
       (\f (x, y, z, i) -> f z >>= \q -> return (x, y, q, i)) =: descOptions
       (\f (x, y, z, i) -> f i >>= \q -> return (x, y, z, q)) =: descOptions
 
-
+{-
 parseArgs :: [String] -> [ArgParse (t -> IO t)] -> [(t -> IO t)]
 parseArgs args parsers =
     let (reqBeginning, rest1)   = break (not . isRequired) parsers
@@ -136,7 +140,7 @@ parseArgs args parsers =
           in (fn x : actions, rest)
       consumeReq [] (p:ps) = error "Required parameter is not specified"
       consumeReq xs [] = ([], xs)
-
+-}
 
 data ParsingConf = ParsingConf
     { pcUsageHeader   :: String
@@ -175,8 +179,7 @@ parseOptions' conf rawArgs = do
       usageStr = usageInfo helpStr optdescr
       showHelp opts = do
         putStrLn $ usageStr
-        exitWith ExitSuccess
-        return opts
+        exitWith ExitSuccess >>= \_ -> return opts
       helpdescr = case pcHelpFlag conf of
                     Just flag -> [ Option [] [flag] (NoArg showHelp) "print the help message and exit." ]
                     Nothing -> []
@@ -187,7 +190,7 @@ parseOptions' conf rawArgs = do
       argparsers = concatMap (\x -> case x of {(Arg p) -> [p]; _ -> []} ) parsers
 
   let (actions, args, msgs) = getOpt Permute optdescr rawArgs
-      argActions = parseArgs args argparsers
+  --    argActions = parseArgs args argparsers
 
   mapM_ (error . flip (++) usageStr) msgs
 
