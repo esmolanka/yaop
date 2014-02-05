@@ -20,19 +20,24 @@ makeSetters ''Options
 
 instance Configurable Options where
     -- | Default options
-    defOptions = Options { optFileName = "default.txt"
-                         , optCount = 0
-                         , optStuff = []
-                         , optDisableTheThing = False
-                         }
+    defConf = Options { optFileName = "default.txt"
+                      , optCount = 0
+                      , optStuff = []
+                      , optDisableTheThing = False
+                      }
     -- | Here we define a list of options that are mapped to Options
-    descOptions = do
-     _optFileName =: option ['f'] ["filename"] "FN" "Set some filename" (\arg x -> print arg >> return arg)
-     _optCount    =: option ['c'] ["count"] "N" "Set some count" (\arg x -> return $ fromMaybe 100 (arg))
-     _optStuff    =: option ['s'] ["stuff"] "S" "Push \"foo\" to a list" (\() x -> return (Right "foo" : x))
-     _optDisableTheThing =: set ['d'] ["disable"] "BOOL" "Disable the thing"
+    parseOpts = do
+     _optFileName <=: setter (\arg _ -> print arg >> return arg)
+                      <> short 'f' <> long "filename"
+                      <> metavar "FN" <> help "Set some filename"
+     _optCount    <=: setter (\arg _ -> return $ fromMaybe 100 arg)
+                      <> short 'c' <> long "count" <> help "Set some count"
+     _optStuff    <=: tweak (\() x -> Right "foo" : x)
+                      <> short 's' <> long "stuff" <> help "Push \"foo\" to a list"
+     _optDisableTheThing <=: set <> short 'd' <> long "disable" <> help "Disable the thing"
 
+main :: IO ()
 main = do
-  (opts :: Options, args :: [String]) <- parseOptions' ( defaultParsingConf { pcUsageHeader = "USAGE: ./ex1 [OPTIONS]" } ) =<< getArgs
+  (opts :: Options, args :: [String]) <- getOptions
   print opts
   print args

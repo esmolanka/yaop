@@ -1,10 +1,12 @@
-{-# LANGUAGE TemplateHaskell, ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, RecordWildCards, TypeOperators, DataKinds #-}
 
 import System.Environment
 import System.Directory
 
 import System.Console.YAOP
 import System.Console.YAOP.TH
+
+import Control.Applicative
 
 import Data.Monoid
 
@@ -13,30 +15,38 @@ import qualified Data.Map as M
 data Options = Options { optFoo :: Product Int
                        , optBar :: Maybe Int
                        , optDict :: M.Map String Int
-                       , optSources  :: [String]
+                       , optSources  :: [FilePath]
                        , optThings :: First String
                        } deriving (Show)
 
 makeSetters ''Options
 
 instance Configurable Options where
-    defOptions = Options { optFoo = mempty
-                         , optBar = Nothing
-                         , optDict = M.empty
-                         , optSources = []
-                         , optThings = First Nothing
-                         }
-    descOptions = do
-      _optFoo    =: append ['F'] ["foo"] Nothing "Set foo"
-      _optDict   =: append ['a'] ["add"] Nothing "Add environment variable"
-      _optSources=: append ['S'] []      Nothing "Include file"
-      _optBar    =: set ['B'] ["bar"] Nothing "Set bar"
-      _optThings =: appendMap ['i'] [] Nothing "Add include path" (\(path :: String) -> doesFileExist path >>=
-                                                                      \x -> return $ if x then First (Just path) else First Nothing)
+    defConf = Options { optFoo = mempty
+                      , optBar = Nothing
+                      , optDict = M.empty
+                      , optSources = []
+                      , optThings = First Nothing
+                      }
+    signature _ = "[FLAGS]"
+    parseOpts = do
+      _optFoo     <=: append <> short 'F' <> long "foo" <> help "Set foo"
+      _optDict    <=: prepend <> short 'a' <> long "add" <> help "Add environment variable"
+      _optSources <=: append <> short 'S' <> help "Include file"
+      _optBar     <=: tweak (\x acc -> Just $ maybe x (x +) acc) <> long "bar"
+      _optThings  <=: long "add-existing-file"
+                      <> help "Add include path"
+                      <> appendMap (\(path :: String) -> doesFileExist path >>=
+                                    \x -> return $ if x then First (Just path) else First Nothing)
 
+
+test :: [String] -> IO ()
 test args = withArgs args main
 
-main = do
-  (opts :: Options, args :: [String]) <- parseOptions =<< getArgs
-  print opts
-  print args
+main :: IO ()
+main = withOptions $ \
+     ( opts :: Options
+     , argument -> arg :: (String, Int)
+     ) -> do
+  print $ opts
+  print $ arg

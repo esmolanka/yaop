@@ -11,9 +11,9 @@ import Data.Maybe
 usageStr = "USAGE: ./ex2 [OPTIONS]"
 
 instance Configurable () where
-    defOptions = ()
-    descOptions = do
-        dummy =: option [] ["usage"] "" "Print usage string" (\() _ -> putStrLn usageStr >> exitWith ExitSuccess)
+    parseOpts = do
+        dummy =: action (putStrLn usageStr >> exitWith ExitSuccess)
+                 <> long "usage" <> help "Print usage string"
 
 -- | Options data structure. Should use record syntax, may have more than one constructor
 data Options = Options { optFileName :: FilePath
@@ -28,13 +28,13 @@ makeSetters ''Options
 
 instance Configurable Options where
     -- | Default options
-    defOptions = Options {optFileName = "default.txt", optCount = 0, optStuff = []}
+    defConf = Options {optFileName = "default.txt", optCount = 0, optStuff = []}
 
     -- | Here we define a list of options that are mapped to Options
-    descOptions = do
-      _optFileName =: option ['f'] ["filename"] "FN" "Set some filename" (\arg _ -> print arg >> return arg)
-      _optCount    =: option ['c'] ["count"] "N" "Set some count" (\arg _ -> return $ fromMaybe 100 (read `fmap` arg))
-      _optStuff    =: option ['s'] ["stuff"] "" "Push \"foo\" to a list" (\() x -> return $ (Right "foo" : x))
+    parseOpts = do
+      _optFileName =: set <> short 'f' <> long "filename" <> help "Set some filename"
+      _optCount    =: set <> short 'c' <> long "count" <> help "Set some count"
+      _optStuff    =: setter (\() x -> return $ (Right "foo" : x)) <> short 's' <> long "stuff" <> help "Push \"foo\" to a list"
 
 -- | Some additional options
 data OtherOpts = OtherOpts { otherServer :: String
@@ -54,12 +54,13 @@ instance Configurable OtherOpts where
                            , otherVerbose = False
                            }
     descOptions = do
-      _otherServer   =: set ['S'] ["server"]   "HOST" "Set server host"
-      _otherPort     =: set ['P'] ["port"]     "PORT" "Set server port"
-      _otherUsername =: set [   ] ["username"] "USER" "Set username"
-      _otherPassword =: option [   ] ["password"] "PASS" "Set password" (\mstr _ -> fmap Just (maybe getLine return mstr))
-      _otherVerbose  =: set ['v'] ["verbose"]  "BOOL" "Verbose mode"
-      _otherVerbose  =: option ['q'] ["no-verbose"]  "asdfasdfasdf" "Verbose mode" (\() _ -> return False)
+      _otherServer   =: set <> short 'S' <> long "server" <> metavar "HOST" <> help "Set server host"
+      _otherPort     =: set <> short 'P' <> long "port" <> metavar   "PORT" <> help "Set server port"
+      _otherUsername =: set <> long "username" <> metavar "USER" <> help "Set username"
+      _otherPassword =: setter (\mstr _ -> fmap Just (maybe getLine return mstr))
+                        <> long "password" <> metavar "PASS" <> help "Set password"
+      _otherVerbose  =: set <> short 'v' <> long "verbose" <> help "Verbose mode"
+      _otherVerbose  =: setConst False <> short 'q' <> long "no-verbose" <> help "Verbose mode"
 
 main = do
   ((), opts::Options, otherOpts::OtherOpts) <- parseOptions' defaultParsingConf =<< getArgs

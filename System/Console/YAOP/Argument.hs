@@ -9,18 +9,17 @@ module System.Console.YAOP.Argument
 
 import System.Console.GetOpt
 
-import System.Console.YAOP.Types
-
 import Control.Applicative
 
 import Data.Typeable
 import Data.Maybe
 
+import Data.Proxy
+
 import qualified Data.Map as M
 import qualified Data.Set as S
 
 import Data.List.Split (splitOn)
-import Data.String
 import Data.Monoid
 
 tryRead :: (Read a) => String -> Either String a
@@ -32,35 +31,27 @@ tryRead str =
 parseError :: [Char] -> [Char] -> a
 parseError metavar msg = error $ "Error parsing " ++ metavar ++ ": " ++ msg
 
-data Proxy ix = Proxy
-
-proxy :: ix -> Proxy ix
-proxy _ = Proxy
-
-unProxy :: (Proxy ix) -> ix
-unProxy = undefined
-
-arr1Type :: (a -> b) -> Proxy a
-arr1Type = const Proxy
+arr1Proxy :: (a -> b) -> Proxy a
+arr1Proxy = const Proxy
 
 class (Typeable a) => Argument a where
     parseArg :: String -> Either String a
 
     defMetavar :: Proxy a -> String
     default defMetavar :: (Typeable a) => Proxy a -> String
-    defMetavar p = show . typeOf $ unProxy p
+    defMetavar p = show . typeOf $ undefined `asProxyTypeOf` p
 
     argDescr :: (a -> b -> IO b) -> Maybe String -> ArgDescr (b -> IO b)
     argDescr f metavar =
-        let metavar' = fromMaybe (defMetavar $ arr1Type f) metavar
+        let metavar' = fromMaybe (defMetavar $ arr1Proxy f) metavar
         in  ReqArg (\str -> f (either (parseError metavar') id $ parseArg str)) metavar'
 
 instance Argument a => Argument (Maybe a) where
     parseArg str = Just `fmap` parseArg str
     argDescr f metavar =
         let unMaybeProxy :: Proxy (Maybe a) -> Proxy a
-            unMaybeProxy _ = Proxy
-            metavar' = fromMaybe (defMetavar $ unMaybeProxy $ arr1Type f) metavar
+            unMaybeProxy = reproxy
+            metavar' = fromMaybe (defMetavar $ unMaybeProxy $ arr1Proxy f) metavar
         in  OptArg (\mstr -> f (fmap (either (parseError metavar') id . parseArg) mstr)) metavar'
 
 instance Argument String where
@@ -89,8 +80,11 @@ instance (Argument a) => Argument [a] where
     parseArg str = mapM parseArg $ splitOn "," str
 
 instance (Argument a, Argument b) => Argument (a, b) where
-    defMetavar p = let ~(a, b) = unProxy p
-                   in defMetavar (proxy a) ++ "=" ++ defMetavar (proxy b)
+    defMetavar p = let fstP :: Proxy (a, b) -> Proxy a
+                       fstP = reproxy
+                       sndP :: Proxy (a, b) -> Proxy b
+                       sndP = reproxy
+                   in defMetavar (fstP p) ++ "=" ++ defMetavar (sndP p)
     parseArg str = case splitOn "=" str of
                      [a, b] -> (,) <$> parseArg a <*> parseArg b
                      _ -> Left $ "Expected pair instead of " ++ show str
