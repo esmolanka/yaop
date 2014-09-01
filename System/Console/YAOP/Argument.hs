@@ -50,7 +50,7 @@ instance Argument a => Argument (Maybe a) where
     parseArg str = Just `fmap` parseArg str
     argDescr f metavar =
         let unMaybeProxy :: Proxy (Maybe a) -> Proxy a
-            unMaybeProxy = reproxy
+            unMaybeProxy _ = Proxy
             metavar' = fromMaybe (defMetavar $ unMaybeProxy $ arr1Proxy f) metavar
         in  OptArg (\mstr -> f (fmap (either (parseError metavar') id . parseArg) mstr)) metavar'
 
@@ -81,9 +81,9 @@ instance (Argument a) => Argument [a] where
 
 instance (Argument a, Argument b) => Argument (a, b) where
     defMetavar p = let fstP :: Proxy (a, b) -> Proxy a
-                       fstP = reproxy
+                       fstP _ = Proxy
                        sndP :: Proxy (a, b) -> Proxy b
-                       sndP = reproxy
+                       sndP _ = Proxy
                    in defMetavar (fstP p) ++ "=" ++ defMetavar (sndP p)
     parseArg str = case splitOn "=" str of
                      [a, b] -> (,) <$> parseArg a <*> parseArg b

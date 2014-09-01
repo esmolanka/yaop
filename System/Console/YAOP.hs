@@ -1,12 +1,13 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, DefaultSignatures
   , ViewPatterns, RankNTypes, TypeOperators, DataKinds, KindSignatures, PolyKinds
-  , MultiParamTypeClasses, TypeFamilies #-}
+  , MultiParamTypeClasses, TypeFamilies, FunctionalDependencies #-}
 
 module System.Console.YAOP
     ( module System.Console.YAOP.Selector
     , module System.Console.YAOP.TH
     , module System.Console.YAOP.Argument
     , module System.Console.YAOP.Types
+
     , (<>) -- from Data.Monoid
     , (<=:)
     , short
@@ -21,13 +22,8 @@ module System.Console.YAOP
     , append
     , prepend
     , appendMap
+
     , (=:)
-    , argument
---    , Annotated
---    , AnnotatedArg
---    , Ann
---    , Ann2
---    , ann
     , Configurable (..)
     , ParsingConf (..)
     , defaultParsingConf
@@ -60,8 +56,8 @@ import qualified Data.Map as M
 import GHC.TypeLits
 
 data OptBuilder arg a = OptBuilder
-    { obShort   :: Maybe Char
-    , obLong    :: Maybe String
+    { obShort   :: [Char]
+    , obLong    :: [String]
     , obMetavar :: Maybe String
     , obDescr   :: Maybe String
     , obSetter  :: (arg -> a -> IO a)
@@ -74,10 +70,10 @@ instance Monoid (OptBuilding arg a) where
     mappend (OptBuilding f) (OptBuilding g) = OptBuilding (f . g)
 
 short :: Char -> OptBuilding arg a
-short f = OptBuilding (\b -> b {obShort = Just f})
+short f = OptBuilding (\b -> b {obShort = f : obShort b})
 
 long :: String -> OptBuilding arg a
-long  f = OptBuilding (\b -> b {obLong  = Just f})
+long  f = OptBuilding (\b -> b {obLong  = f : obLong b})
 
 metavar :: String -> OptBuilding arg a
 metavar v = OptBuilding (\b -> b {obMetavar = Just v})
@@ -121,18 +117,15 @@ infix 0 <=:
 (<=:) sel builder = sel =: pushOption builder
     where
       defOptBuilder = OptBuilder
-                        Nothing
-                        Nothing
+                        []
+                        []
                         Nothing
                         Nothing
                         (error "Parser does not have an action")
       pushOption (OptBuilding builder) =
           let (OptBuilder short long metavar help setter) = builder defOptBuilder
-          in  tell [ Opt $ Option
-                             (maybeToList short)
-                             (maybeToList long)
-                             (argDescr setter metavar)
-                             (fromMaybe "(no description)" help)
+          in  tell [ ParseOpt $ Option short long (argDescr setter metavar)
+                                  (fromMaybe "(no description)" help)
                    ]
 
 -- | Apply selector to options combinator
@@ -143,28 +136,7 @@ infix 0 <=:
 (=:) f optm = tell . map (fmap f) $ runOptM optm
 
 
-newtype FreeArg a = FreeArg a
-
-
-type a :? s = Tagged (Sing s) a
-
-{-
-
-class Annotatable a b where
-    type Ann a b s
-
-instance Annotatable a a where
-    type Ann a a s = a :? s -> a
-
-instance Annotatable (FreeArg a) a where
-    type Ann (FreeArg a) a s = (FreeArg a) :? s -> a
-
-
-type Ann2 s = forall a b. Ann a b s
-
-ann2 = unTagged
-ann3 = argument . unTagged
--}
+newtype Conf a = Conf { unConf :: a }
 
 class Configurable a where
     defConf :: a
@@ -179,26 +151,15 @@ class Configurable a where
 
     parseOpts :: OptM a ()
 
-argument :: FreeArg t -> t
-argument (FreeArg a) = a
-
-instance (Configurable a, SingRep s String) => Configurable (a :? s) where
-    defConf = Tagged defConf
-    signature a = let singOf :: (SingI s) => (Tagged (Sing s) b) -> Sing s
-                      singOf _ = sing
-                  in fromSing $ singOf a
-    parseOpts = (\f x -> f (unTagged x) >>= return . Tagged) =: parseOpts
-
-instance (Argument a) => Configurable (FreeArg a) where
-    defConf = let it = error $ "Required argument is missing: " ++ signature it in it
-    signature _ = "ARG"
-    parseOpts = tell [ Arg $ ArgParse OneReq (\str l -> return $ FreeArg $ either error id $ parseArg str) ]
-
+instance (Configurable a) => Configurable (Conf a) where
+    defConf = Conf defConf
+    signature (Conf a) = signature a
+    parseOpts = (\f x -> f (unConf x) >>= return . Conf) =: parseOpts
 
 instance Configurable [String] where
     defConf = []
     signature _ = "ARGS"
-    parseOpts = tell [ Arg $ ArgParse Many (\str l -> return $ l ++ [str] ) ]
+    parseOpts = tell [ ParseArg $ ArgParse Many (\str l -> return $ l ++ [str] ) ]
 
 instance (Configurable a, Configurable b) => Configurable (a, b) where
     defConf = (defConf, defConf)
@@ -305,7 +266,7 @@ parseOptions' conf rawArgs = do
 
       parsers = runOptM parseOpts
 
-      optdescr = helpdescr ++ concatMap (\x -> case x of {Opt d -> [d]; _ -> []} ) parsers
+      optdescr = helpdescr ++ concatMap (\x -> case x of {ParseOpt d -> [d]; _ -> []} ) parsers
 
       --argparsers = concatMap (\x -> case x of {(Arg p) -> [p]; _ -> []} ) parsers
 

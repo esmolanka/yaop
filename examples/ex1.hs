@@ -1,18 +1,16 @@
-{-# LANGUAGE TemplateHaskell, ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, DeriveDataTypeable #-}
 
-import System.Environment
 import System.Console.YAOP
-import System.Console.YAOP.Selector
 
-import Data.List
 import Data.Maybe
+import Data.Typeable
 
 -- | Options data structure. Should use record syntax, may have more than one constructor
 data Options = Options { optFileName :: FilePath
                        , optCount :: Int
                        , optStuff :: [Either Int String]
                        , optDisableTheThing :: Bool
-                       } deriving (Show)
+                       } deriving (Show, Typeable)
 
 -- | This triggers YAOP's accessors generator, e.g.
 -- @modM_optFileName :: Monad m => (FilePath -> m FilePath) -> Options -> m Options@

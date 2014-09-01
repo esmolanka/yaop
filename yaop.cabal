@@ -17,15 +17,17 @@ Extra-source-files:  examples/ex1.hs
 Cabal-version:       >=1.6
 
 Library
-  Exposed-modules:     System.Console.YAOP, 
+  Exposed-modules:     System.Console.YAOP,
                        System.Console.YAOP.Actions,
                        System.Console.YAOP.Argument,
                        System.Console.YAOP.TH,
                        System.Console.YAOP.Types,
                        System.Console.YAOP.Selector
-                       
+
   Build-depends:       base>=4.2 && <5
                      , template-haskell
                      , mtl>=2.0 && <3.0
                      , split
                      , data-default
+                     , containers >= 0.5
+                     , tagged

@@ -1,5 +1,5 @@
-{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, RecordWildCards, TypeOperators, DataKinds #-}
-
+{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, ViewPatterns #-}
+-- , RecordWildCards, TypeOperators, DataKinds,
 import System.Environment
 import System.Directory
 
@@ -46,7 +46,7 @@ test args = withArgs args main
 main :: IO ()
 main = withOptions $ \
      ( opts :: Options
-     , argument -> arg :: (String, Int)
+     , argument2 -> arg :: String
      ) -> do
   print $ opts
-  print $ arg
+  print $  arg
